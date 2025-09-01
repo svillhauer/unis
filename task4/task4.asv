@@ -44,7 +44,7 @@ vout       = 25;      % cut-out speed [m/s]
 farm_eff   = 0.50;    % 0–1 scaling applied to farm power
 
 %% 3) Convert hub-height wind speed to electrical power (per turbine)
-% Use a piecewise power curve:
+% We’ll use a standard "textbook" piecewise power curve:
 %   - P = 0 below cut-in and above cut-out
 %   - P grows ~cubic with wind speed between vin and vrated
 %   - P = Prated at/above vrated (until cut-out)
@@ -57,6 +57,8 @@ P_turb(below) = Prated .* ((wshub(below) - vin) ./ (vrated - vin)).^3;
 
 % Flat at Prated until cut-out
 P_turb(rated) = Prated;
+
+% Zero elsewhere already set
 
 %% 4) Farm power time series (apply number of turbines + overall efficiency)
 P_farm = n_turbines .* P_turb .* farm_eff;   % [W]
@@ -83,7 +85,6 @@ Eyr_min  = min(Eyr_MWh);
 Eyr_max  = max(Eyr_MWh);
 
 fprintf('Annual production stats (6×12 MW, 50%% eff., hub factor 1.36):\n');
-
 fprintf('  mean = %.0f MWh/yr, std = %.0f, min = %.0f, max = %.0f\n', ...
     Eyr_mean, Eyr_std, Eyr_min, Eyr_max);
 
@@ -95,15 +96,10 @@ fprintf('Average capacity factor over full record: %.1f %%\n', 100*CF);
 
 % Plot annual energy
 figure('Name','Annual Energy Production');
-bar(unique(yr), Eyr_MWh, 'FaceColor',[0 0 0.55], 'EdgeColor','k');  % dark blue with black edges
-
-xlabel('Year','Interpreter','latex','FontSize',18); 
-ylabel('Energy [MWh]', 'Interpreter','latex','FontSize',18);
-
-title('Annual energy production (scaled to hub height, 50% overall efficiency)', 'Interpreter','Latex', 'FontSize', 20);
-
-set(gcf,'Color','white');
-set(gca,'FontSize',14);
+bar(unique(yr), Eyr_MWh);
+xlabel('Year','Interpreter','Latex','Fontsize',18); ylabel('Energy [MWh]', 'Interpreter','Latex', 'Fontsize',18);
+title('Annual energy production (scaled to hub height, 50% overall eff.)', 'Interpreter','Latex', 'Fontsize',20);
+set(gcf,'color','white')
 grid on;
 
 
@@ -112,91 +108,6 @@ grid on;
 %% Task 4b
 % Calculate from the hindcast of weather the average duration of "calms" for
 % each month (Jan-Dec) for significant wave height (hs) equal to 1m, 2m and 3m.
-
-mon = month(t);                  % 1..12 month index (safe now)
-thr_list = [1, 2, 3];            % thresholds in meters
-dt_h = 3;                        % hours per sample
-nmon = 12;
-
-% helper to get run lengths (in samples) of a logical vector
-get_run_lengths = @(v) diff(find([true; diff(v(:)) ~= 0; true]));
-
-avgCalmHours = nan(nmon, numel(thr_list));  % average calm duration [h]
-numEvents    = zeros(nmon, numel(thr_list));% number of calm runs counted
-
-for j = 1:numel(thr_list)
-    thr = thr_list(j);
-    isCalmAll = (hs <= thr);     % calm samples across entire record
-
-    for m = 1:nmon
-        inMonth = (mon == m);        % pick all samples that are in month m (across years)
-        v = isCalmAll(inMonth);      % logical vector for calm/not calm in month m
-
-        if isempty(v) || ~any(v)
-            % No calm samples recorded in this month
-            avgCalmHours(m,j) = NaN;
-            numEvents(m,j)    = 0;
-            continue;
-        end
-
-        % run lengths for consecutive identical values (true or false)
-        rl = get_run_lengths(v);
-        % values (true/false) for each run:
-        runStarts = [1; 1 + find(diff(v(:)) ~= 0)];
-        runVals   = v(runStarts);
-
-        % keep only runs where value is true (calm)
-        calmRuns_samples = rl(runVals == true);
-        calmRuns_hours   = calmRuns_samples * dt_h;
-
-        if isempty(calmRuns_hours)
-            avgCalmHours(m,j) = NaN;
-            numEvents(m,j)    = 0;
-        else
-            avgCalmHours(m,j) = mean(calmRuns_hours);
-            numEvents(m,j)    = numel(calmRuns_hours);
-        end
-    end
-end
-
-% present results
-monNames = month(datetime(2000,1:12,1), 'name')';
-
-CalmTable = table( ...
-    monNames(:), ...
-    avgCalmHours(:,1), avgCalmHours(:,2), avgCalmHours(:,3), ...
-    numEvents(:,1),    numEvents(:,2),    numEvents(:,3), ...
-    'VariableNames', {'Month', 'AvgCalm_hs_le_1m_h', 'AvgCalm_hs_le_2m_h', 'AvgCalm_hs_le_3m_h', ...
-                      'Nevents_1m', 'Nevents_2m', 'Nevents_3m'});
-
-disp('Average calm durations by month (hours) and number of events counted:');
-disp(CalmTable);
-
-figure('Name','Average Calm Duration per Month');
-
-% Define custom colors (RGB values between 0 and 1)
-darkBlue  = [0 0 0.55];   % navy-ish
-purple    = [0.5 0 0.5];  % medium purple
-darkGreen = [0 0.5 0];    % dark green
-
-% Plot each line separately with its color
-plot(1:12, avgCalmHours(:,1), 'o-', 'LineWidth',1.5, 'Color',darkBlue); hold on;
-plot(1:12, avgCalmHours(:,2), 'o-', 'LineWidth',1.5, 'Color',purple);
-plot(1:12, avgCalmHours(:,3), 'o-', 'LineWidth',1.5, 'Color',darkGreen);
-
-xlim([1 12]); 
-xticks(1:12); 
-xticklabels(monNames);
-
-ylabel('Average calm duration [hours]','Interpreter','latex','FontSize',18);
-legend({'$H_s \leq 1$ m','$H_s \leq 2$ m','$H_s \leq 3$ m'}, ...
-       'Location','northwest','Interpreter','latex','FontSize',14);
-
-title('Average duration of calm periods per month','Interpreter','latex','FontSize',20);
-
-set(gcf,'Color','white');
-set(gca,'FontSize',14);
-grid on;
 
 
 
